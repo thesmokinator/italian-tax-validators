@@ -103,15 +103,33 @@ CF_EVEN_VALUES = {
 
 # Month codes for Codice Fiscale (A=January, B=February, etc.)
 CF_MONTH_CODES = {
-    "A": 1, "B": 2, "C": 3, "D": 4, "E": 5, "H": 6,
-    "L": 7, "M": 8, "P": 9, "R": 10, "S": 11, "T": 12,
+    "A": 1,
+    "B": 2,
+    "C": 3,
+    "D": 4,
+    "E": 5,
+    "H": 6,
+    "L": 7,
+    "M": 8,
+    "P": 9,
+    "R": 10,
+    "S": 11,
+    "T": 12,
 }
 
 # Omocodia substitution characters (digits can be replaced with these letters)
 # Used when two people have the same CF
 CF_OMOCODIA_CHARS = {
-    "L": "0", "M": "1", "N": "2", "P": "3", "Q": "4",
-    "R": "5", "S": "6", "T": "7", "U": "8", "V": "9",
+    "L": "0",
+    "M": "1",
+    "N": "2",
+    "P": "3",
+    "Q": "4",
+    "R": "5",
+    "S": "6",
+    "T": "7",
+    "U": "8",
+    "V": "9",
 }
 
 
@@ -236,8 +254,10 @@ class CodiceFiscaleValidator:
 
         # Calculate age
         today = date.today()
-        age = today.year - birthdate.year - (
-            (today.month, today.day) < (birthdate.month, birthdate.day)
+        age = (
+            today.year
+            - birthdate.year
+            - ((today.month, today.day) < (birthdate.month, birthdate.day))
         )
 
         # Step 4: Check age if required
