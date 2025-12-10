@@ -23,18 +23,82 @@ MINIMUM_AGE_YEARS = 18
 
 # Odd position character values (1st, 3rd, 5th, etc. - 1-indexed)
 CF_ODD_VALUES = {
-    "0": 1, "1": 0, "2": 5, "3": 7, "4": 9, "5": 13, "6": 15, "7": 17, "8": 19, "9": 21,
-    "A": 1, "B": 0, "C": 5, "D": 7, "E": 9, "F": 13, "G": 15, "H": 17, "I": 19, "J": 21,
-    "K": 2, "L": 4, "M": 18, "N": 20, "O": 11, "P": 3, "Q": 6, "R": 8, "S": 12, "T": 14,
-    "U": 16, "V": 10, "W": 22, "X": 25, "Y": 24, "Z": 23,
+    "0": 1,
+    "1": 0,
+    "2": 5,
+    "3": 7,
+    "4": 9,
+    "5": 13,
+    "6": 15,
+    "7": 17,
+    "8": 19,
+    "9": 21,
+    "A": 1,
+    "B": 0,
+    "C": 5,
+    "D": 7,
+    "E": 9,
+    "F": 13,
+    "G": 15,
+    "H": 17,
+    "I": 19,
+    "J": 21,
+    "K": 2,
+    "L": 4,
+    "M": 18,
+    "N": 20,
+    "O": 11,
+    "P": 3,
+    "Q": 6,
+    "R": 8,
+    "S": 12,
+    "T": 14,
+    "U": 16,
+    "V": 10,
+    "W": 22,
+    "X": 25,
+    "Y": 24,
+    "Z": 23,
 }
 
 # Even position character values (2nd, 4th, 6th, etc. - 1-indexed)
 CF_EVEN_VALUES = {
-    "0": 0, "1": 1, "2": 2, "3": 3, "4": 4, "5": 5, "6": 6, "7": 7, "8": 8, "9": 9,
-    "A": 0, "B": 1, "C": 2, "D": 3, "E": 4, "F": 5, "G": 6, "H": 7, "I": 8, "J": 9,
-    "K": 10, "L": 11, "M": 12, "N": 13, "O": 14, "P": 15, "Q": 16, "R": 17, "S": 18, "T": 19,
-    "U": 20, "V": 21, "W": 22, "X": 23, "Y": 24, "Z": 25,
+    "0": 0,
+    "1": 1,
+    "2": 2,
+    "3": 3,
+    "4": 4,
+    "5": 5,
+    "6": 6,
+    "7": 7,
+    "8": 8,
+    "9": 9,
+    "A": 0,
+    "B": 1,
+    "C": 2,
+    "D": 3,
+    "E": 4,
+    "F": 5,
+    "G": 6,
+    "H": 7,
+    "I": 8,
+    "J": 9,
+    "K": 10,
+    "L": 11,
+    "M": 12,
+    "N": 13,
+    "O": 14,
+    "P": 15,
+    "Q": 16,
+    "R": 17,
+    "S": 18,
+    "T": 19,
+    "U": 20,
+    "V": 21,
+    "W": 22,
+    "X": 23,
+    "Y": 24,
+    "Z": 25,
 }
 
 # Month codes for Codice Fiscale (A=January, B=February, etc.)
@@ -118,7 +182,9 @@ class CodiceFiscaleValidator:
     OMOCODIA_POSITIONS = [6, 7, 9, 10, 12, 13, 14]
 
     # Regex pattern for CF format (allowing omocodia)
-    CF_PATTERN = re.compile(r"^[A-Z]{6}[A-Z0-9]{2}[A-Z][A-Z0-9]{2}[A-Z][A-Z0-9]{3}[A-Z]$")
+    CF_PATTERN = re.compile(
+        r"^[A-Z]{6}[A-Z0-9]{2}[A-Z][A-Z0-9]{2}[A-Z][A-Z0-9]{3}[A-Z]$"
+    )
 
     def validate(
         self,
@@ -130,7 +196,8 @@ class CodiceFiscaleValidator:
 
         Args:
             value: The CF string to validate
-            check_adult: Whether to verify the person is at least minimum_age years old
+            check_adult: Whether to verify the person is at least minimum_age
+                years old
             minimum_age: Minimum age required (default: 18)
 
         Returns:
@@ -207,7 +274,8 @@ class CodiceFiscaleValidator:
         """Decode omocodia characters back to digits.
 
         Omocodia occurs when two people have the same CF. In such cases,
-        digits at positions 6, 7, 9, 10, 12, 13, 14 can be replaced with letters.
+        digits at positions 6, 7, 9, 10, 12, 13, 14 can be replaced with
+        letters.
 
         Args:
             cf: 16-character CF string
@@ -244,9 +312,11 @@ class CodiceFiscaleValidator:
 
         total = 0
         for i, char in enumerate(decoded_cf[:15]):
-            if i % 2 == 0:  # Odd positions (1-indexed) = even index (0-indexed)
+            if i % 2 == 0:
+                # Odd positions (1-indexed) = even index (0-indexed)
                 total += CF_ODD_VALUES.get(char, 0)
-            else:  # Even positions (1-indexed) = odd index (0-indexed)
+            else:
+                # Even positions (1-indexed) = odd index (0-indexed)
                 total += CF_EVEN_VALUES.get(char, 0)
 
         expected_check = chr(ord("A") + (total % 26))
@@ -280,7 +350,10 @@ class CodiceFiscaleValidator:
             current_century = current_year // 100 * 100
             current_year_two_digits = current_year % 100
 
-            year = 1900 + year if year > current_year_two_digits else current_century + year
+            if year > current_year_two_digits:
+                year = 1900 + year
+            else:
+                year = current_century + year
 
             # Month: position 8 (0-indexed)
             month_char = cf[8]
@@ -375,10 +448,10 @@ class PartitaIvaValidator:
         for i, digit in enumerate(vat_number):
             d = int(digit)
             if i % 2 == 0:
-                # Odd positions (1-indexed) = even index (0-indexed): add directly
+                # Odd positions: add directly
                 total += d
             else:
-                # Even positions (1-indexed) = odd index (0-indexed): double
+                # Even positions: double
                 doubled = d * 2
                 if doubled >= 10:
                     doubled -= 9
@@ -425,7 +498,9 @@ def validate_codice_fiscale(
         CodiceFiscaleValidationResult with validation details
 
     """
-    return _ValidatorInstances.get_cf_validator().validate(value, check_adult, minimum_age)
+    return _ValidatorInstances.get_cf_validator().validate(
+        value, check_adult, minimum_age
+    )
 
 
 def validate_partita_iva(value: str) -> PartitaIvaValidationResult:
