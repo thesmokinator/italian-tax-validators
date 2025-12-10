@@ -28,7 +28,7 @@ from italian_tax_validators.validators import (
     validate_partita_iva,
 )
 
-__version__ = "1.0.0"
+__version__ = "1.0.1"
 __author__ = "Your Name"
 __license__ = "MIT"
 
