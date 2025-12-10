@@ -8,8 +8,6 @@ Tests for:
 - Check digit algorithms
 """
 
-import datetime
-from datetime import date
 from unittest import TestCase
 
 from italian_tax_validators import (
@@ -43,7 +41,8 @@ class CodiceFiscaleValidatorTest(TestCase):
 
     def test_valid_codice_fiscale_female(self):
         """Test validation of a valid female CF (day + 40)."""
-        # RSSMRA85M41H501U - Maria Rossi, born Aug 1, 1985 in Rome (female: 01+40=41)
+        # RSSMRA85M41H501U - Maria Rossi, born Aug 1, 1985 in Rome
+        # (female: 01+40=41)
         result = self.validator.validate("RSSMRA85M41H501U")
 
         self.assertTrue(result.is_valid)
@@ -89,12 +88,12 @@ class CodiceFiscaleValidatorTest(TestCase):
 
     def test_codice_fiscale_omocodia(self):
         """Test validation of CF with omocodia substitutions."""
-        # RSSMRA85M01H50MZ - with omocodia: 1 -> M at position 14
+        # RSSMRA85M01H50MZ - omocodia
         result = self.validator.validate("RSSMRA85M0MH50MZ")
 
         # Note: The check digit changes with omocodia
         # This test verifies the validator handles omocodia characters
-        self.assertIn(result.is_valid, [True, False])  # Depends on correct check digit
+        self.assertIn(result.is_valid, [True, False])  # Depends on check digit
 
     def test_age_check_adult(self):
         """Test age verification for adult (18+)."""
@@ -116,7 +115,9 @@ class CodiceFiscaleValidatorTest(TestCase):
     def test_age_check_custom_minimum_age(self):
         """Test age verification with custom minimum age."""
         # Person born in 1985 is about 40 years old
-        result = self.validator.validate("RSSMRA85M01H501Q", check_adult=True, minimum_age=50)
+        result = self.validator.validate(
+            "RSSMRA85M01H501Q", check_adult=True, minimum_age=50
+        )
 
         # Should fail because they're not 50+ yet
         self.assertFalse(result.is_valid)

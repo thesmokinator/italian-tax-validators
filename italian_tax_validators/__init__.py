@@ -1,11 +1,14 @@
 """Italian tax validators for Codice Fiscale and Partita IVA.
 
-This package provides validation utilities for Italian tax identification numbers:
+This package provides validation utilities for Italian tax identification
+numbers:
 - Codice Fiscale (CF): Personal tax identification code
 - Partita IVA (P.IVA): VAT identification number
 
 Example:
-    >>> from italian_tax_validators import validate_codice_fiscale, validate_partita_iva
+    >>> from italian_tax_validators import (
+    ...     validate_codice_fiscale, validate_partita_iva
+    ... )
     >>> cf_result = validate_codice_fiscale("RSSMRA85M01H501Q")
     >>> piva_result = validate_partita_iva("12345678903")
 
