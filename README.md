@@ -269,5 +269,5 @@ This library provides validation utilities for Italian tax identification docume
 ## Resources
 
 - [Agenzia delle Entrate](https://www.agenziaentrate.gov.it/) - Official Italian Tax Agency
-- [Codice Fiscale Format](https://en.wikipedia.org/wiki/Fiscal_code) - Wikipedia
-- [Partita IVA Format](https://en.wikipedia.org/wiki/VAT_identification_number) - Wikipedia
+- [Codice Fiscale Format](https://it.wikipedia.org/wiki/Codice_fiscale) - Wikipedia
+- [Partita IVA Format](https://it.wikipedia.org/wiki/Partita_IVA) - Wikipedia
