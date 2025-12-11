@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "italian-tax-validators"
-version = "1.0.0"
+version = "1.1.0"
 description = "Python library for validating Italian Codice Fiscale and Partita IVA"
 readme = "README.md"
 requires-python = ">=3.9"
@@ -38,6 +38,9 @@ classifiers = [
     "Topic :: Software Development :: Libraries :: Python Modules",
     "Topic :: Office/Business :: Financial",
 ]
+
+[project.scripts]
+italian-tax-validators = "italian_tax_validators.cli:main"
 
 [project.urls]
 Homepage = "https://github.com/thesmokinator/italian-tax-validators"
