@@ -13,9 +13,18 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 from datetime import date
+from typing import Literal
+
+from italian_tax_validators.comuni import (
+    get_municipality_info,
+    is_foreign_country,
+)
 
 # Minimum age required for certain operations (e.g., Pro registration)
 MINIMUM_AGE_YEARS = 18
+
+# Gender types
+Gender = Literal["M", "F"]
 
 # ============================================================================
 # Codice Fiscale (CF) Validation Tables
@@ -132,6 +141,12 @@ CF_OMOCODIA_CHARS = {
     "V": "9",
 }
 
+# Reverse mapping: digit to omocodia character
+CF_OMOCODIA_DIGITS = {v: k for k, v in CF_OMOCODIA_CHARS.items()}
+
+# Reverse mapping: month number to code letter
+CF_MONTH_CODES_REVERSE = {v: k for k, v in CF_MONTH_CODES.items()}
+
 
 @dataclass
 class CodiceFiscaleValidationResult:
@@ -143,6 +158,11 @@ class CodiceFiscaleValidationResult:
         formatted_value: The cleaned/formatted CF value
         birthdate: Extracted birthdate (None if extraction failed)
         age: Calculated age in years (None if birthdate extraction failed)
+        gender: Extracted gender ("M" or "F", None if extraction failed)
+        birth_place_code: Cadastral code of birth place
+        birth_place_name: Name of birth municipality/country
+        birth_place_province: Province code (or "EE" for foreign countries)
+        is_foreign_born: Whether born outside Italy
 
     """
 
@@ -151,6 +171,11 @@ class CodiceFiscaleValidationResult:
     formatted_value: str | None = None
     birthdate: date | None = None
     age: int | None = None
+    gender: Gender | None = None
+    birth_place_code: str | None = None
+    birth_place_name: str | None = None
+    birth_place_province: str | None = None
+    is_foreign_born: bool | None = None
 
 
 @dataclass
@@ -161,12 +186,16 @@ class PartitaIvaValidationResult:
         is_valid: Whether the P.IVA is valid
         error_code: Error code if invalid (None if valid)
         formatted_value: The cleaned/formatted P.IVA value
+        is_temporary: Whether this is a temporary VAT number (starts with 99)
+        province_code: Provincial office code (digits 8-10)
 
     """
 
     is_valid: bool
     error_code: str | None = None
     formatted_value: str | None = None
+    is_temporary: bool | None = None
+    province_code: str | None = None
 
 
 class CodiceFiscaleValidator:
@@ -241,8 +270,8 @@ class CodiceFiscaleValidator:
                 formatted_value=clean_value,
             )
 
-        # Step 3: Extract birthdate
-        birthdate = self._extract_birthdate(clean_value)
+        # Step 3: Extract birthdate and gender
+        birthdate, gender = self._extract_birthdate_and_gender(clean_value)
         age = None
 
         if birthdate is None:
@@ -260,7 +289,17 @@ class CodiceFiscaleValidator:
             - ((today.month, today.day) < (birthdate.month, birthdate.day))
         )
 
-        # Step 4: Check age if required
+        # Step 4: Extract birth place
+        birth_place_code = clean_value[11:15]
+        birth_place_info = get_municipality_info(birth_place_code)
+        birth_place_name = None
+        birth_place_province = None
+        foreign_born = is_foreign_country(birth_place_code)
+
+        if birth_place_info:
+            birth_place_name, birth_place_province = birth_place_info
+
+        # Step 5: Check age if required
         if check_adult and age < minimum_age:
             return CodiceFiscaleValidationResult(
                 is_valid=False,
@@ -268,6 +307,11 @@ class CodiceFiscaleValidator:
                 formatted_value=clean_value,
                 birthdate=birthdate,
                 age=age,
+                gender=gender,
+                birth_place_code=birth_place_code,
+                birth_place_name=birth_place_name,
+                birth_place_province=birth_place_province,
+                is_foreign_born=foreign_born,
             )
 
         # All validations passed
@@ -276,6 +320,11 @@ class CodiceFiscaleValidator:
             formatted_value=clean_value,
             birthdate=birthdate,
             age=age,
+            gender=gender,
+            birth_place_code=birth_place_code,
+            birth_place_name=birth_place_name,
+            birth_place_province=birth_place_province,
+            is_foreign_born=foreign_born,
         )
 
     def _validate_format(self, cf: str) -> bool:
@@ -342,8 +391,10 @@ class CodiceFiscaleValidator:
         expected_check = chr(ord("A") + (total % 26))
         return cf[15] == expected_check
 
-    def _extract_birthdate(self, cf: str) -> date | None:
-        """Extract birthdate from Codice Fiscale.
+    def _extract_birthdate_and_gender(
+        self, cf: str
+    ) -> tuple[date | None, Gender | None]:
+        """Extract birthdate and gender from Codice Fiscale.
 
         The birthdate is encoded in positions 6-11:
         - Positions 6-7: Last two digits of birth year
@@ -354,7 +405,8 @@ class CodiceFiscaleValidator:
             cf: 16-character CF string (uppercase)
 
         Returns:
-            date object if extraction successful, None otherwise
+            Tuple of (date, gender) if extraction successful,
+            (None, None) otherwise
 
         """
         try:
@@ -379,20 +431,22 @@ class CodiceFiscaleValidator:
             month_char = cf[8]
             month = CF_MONTH_CODES.get(month_char)
             if month is None:
-                return None
+                return None, None
 
             # Day: positions 9-10 (0-indexed)
             day_digits = decoded_cf[9:11]
             day = int(day_digits)
 
             # For females, 40 is added to the day
+            gender: Gender = "M"
             if day > 40:
                 day -= 40
+                gender = "F"
 
-            return date(year, month, day)
+            return date(year, month, day), gender
 
         except (ValueError, IndexError):
-            return None
+            return None, None
 
 
 class PartitaIvaValidator:
@@ -440,10 +494,16 @@ class PartitaIvaValidator:
                 formatted_value=clean_value,
             )
 
+        # Extract additional information
+        province_code = clean_value[7:10]
+        is_temporary = clean_value.startswith("99")
+
         # All validations passed
         return PartitaIvaValidationResult(
             is_valid=True,
             formatted_value=clean_value,
+            is_temporary=is_temporary,
+            province_code=province_code,
         )
 
     def _validate_check_digit(self, vat_number: str) -> bool:
@@ -534,3 +594,316 @@ def validate_partita_iva(value: str) -> PartitaIvaValidationResult:
 
     """
     return _ValidatorInstances.get_piva_validator().validate(value)
+
+
+# ============================================================================
+# Codice Fiscale Generation
+# ============================================================================
+
+
+@dataclass
+class CodiceFiscaleGenerationResult:
+    """Result of Codice Fiscale generation.
+
+    Attributes:
+        is_valid: Whether the generation was successful
+        error_code: Error code if generation failed (None if successful)
+        codice_fiscale: The generated Codice Fiscale (None if failed)
+
+    """
+
+    is_valid: bool
+    error_code: str | None = None
+    codice_fiscale: str | None = None
+
+
+class CodiceFiscaleGenerator:
+    """Generator for Italian Codice Fiscale.
+
+    The Codice Fiscale is a 16-character alphanumeric code that encodes:
+    - Surname (3 characters)
+    - Name (3 characters)
+    - Birth year (2 digits)
+    - Birth month (1 letter)
+    - Birth day and gender (2 digits, +40 for females)
+    - Birth place code (4 characters)
+    - Check character (1 letter)
+
+    Example:
+        >>> generator = CodiceFiscaleGenerator()
+        >>> result = generator.generate(
+        ...     surname="Rossi",
+        ...     name="Mario",
+        ...     birthdate=date(1985, 8, 1),
+        ...     gender="M",
+        ...     birth_place_code="H501"
+        ... )
+        >>> print(result.codice_fiscale)
+        RSSMRA85M01H501Q
+
+    """
+
+    # Characters used for consonants/vowels extraction
+    VOWELS = "AEIOU"
+    CONSONANTS = "BCDFGHJKLMNPQRSTVWXYZ"
+
+    def generate(
+        self,
+        surname: str,
+        name: str,
+        birthdate: date,
+        gender: Gender,
+        birth_place_code: str,
+    ) -> CodiceFiscaleGenerationResult:
+        """Generate an Italian Codice Fiscale.
+
+        Args:
+            surname: Person's surname
+            name: Person's first name
+            birthdate: Date of birth
+            gender: "M" for male, "F" for female
+            birth_place_code: 4-character cadastral code (e.g., "H501" for Rome)
+
+        Returns:
+            CodiceFiscaleGenerationResult with the generated CF or error
+
+        """
+        # Validate inputs
+        if not surname or not surname.strip():
+            return CodiceFiscaleGenerationResult(
+                is_valid=False,
+                error_code="cf_gen_invalid_surname",
+            )
+
+        if not name or not name.strip():
+            return CodiceFiscaleGenerationResult(
+                is_valid=False,
+                error_code="cf_gen_invalid_name",
+            )
+
+        if gender not in ("M", "F"):
+            return CodiceFiscaleGenerationResult(
+                is_valid=False,
+                error_code="cf_gen_invalid_gender",
+            )
+
+        birth_place_code = birth_place_code.strip().upper()
+        if len(birth_place_code) != 4:
+            return CodiceFiscaleGenerationResult(
+                is_valid=False,
+                error_code="cf_gen_invalid_birth_place_code",
+            )
+
+        try:
+            # Generate each part
+            surname_code = self._encode_surname(surname)
+            name_code = self._encode_name(name)
+            year_code = str(birthdate.year)[-2:]
+            month_code = CF_MONTH_CODES_REVERSE[birthdate.month]
+            day_code = self._encode_day(birthdate.day, gender)
+
+            # Combine parts (without check digit)
+            cf_partial = (
+                f"{surname_code}{name_code}{year_code}"
+                f"{month_code}{day_code}{birth_place_code}"
+            )
+
+            # Calculate check digit
+            check_digit = self._calculate_check_digit(cf_partial)
+            codice_fiscale = f"{cf_partial}{check_digit}"
+
+            return CodiceFiscaleGenerationResult(
+                is_valid=True,
+                codice_fiscale=codice_fiscale,
+            )
+
+        except (ValueError, KeyError) as e:
+            return CodiceFiscaleGenerationResult(
+                is_valid=False,
+                error_code=f"cf_gen_error: {e!s}",
+            )
+
+    def _clean_string(self, value: str) -> str:
+        """Clean a string by removing non-alphabetic characters and uppercasing.
+
+        Args:
+            value: Input string
+
+        Returns:
+            Cleaned uppercase string with only letters
+
+        """
+        return "".join(c for c in value.upper() if c.isalpha())
+
+    def _extract_consonants(self, value: str) -> str:
+        """Extract consonants from a string.
+
+        Args:
+            value: Input string (uppercase)
+
+        Returns:
+            String containing only consonants
+
+        """
+        return "".join(c for c in value if c in self.CONSONANTS)
+
+    def _extract_vowels(self, value: str) -> str:
+        """Extract vowels from a string.
+
+        Args:
+            value: Input string (uppercase)
+
+        Returns:
+            String containing only vowels
+
+        """
+        return "".join(c for c in value if c in self.VOWELS)
+
+    def _encode_surname(self, surname: str) -> str:
+        """Encode surname into 3-character CF code.
+
+        Rules:
+        - Take first 3 consonants
+        - If less than 3 consonants, add vowels
+        - If still less than 3 characters, pad with 'X'
+
+        Args:
+            surname: Person's surname
+
+        Returns:
+            3-character code
+
+        """
+        clean = self._clean_string(surname)
+        consonants = self._extract_consonants(clean)
+        vowels = self._extract_vowels(clean)
+
+        code = consonants[:3]
+        if len(code) < 3:
+            code += vowels[: 3 - len(code)]
+        if len(code) < 3:
+            code += "X" * (3 - len(code))
+
+        return code[:3]
+
+    def _encode_name(self, name: str) -> str:
+        """Encode name into 3-character CF code.
+
+        Rules:
+        - If 4+ consonants: take 1st, 3rd, and 4th consonant
+        - If 3 consonants: take all 3
+        - If less than 3 consonants, add vowels
+        - If still less than 3 characters, pad with 'X'
+
+        Args:
+            name: Person's first name
+
+        Returns:
+            3-character code
+
+        """
+        clean = self._clean_string(name)
+        consonants = self._extract_consonants(clean)
+        vowels = self._extract_vowels(clean)
+
+        if len(consonants) >= 4:
+            code = consonants[0] + consonants[2] + consonants[3]
+        else:
+            code = consonants[:3]
+            if len(code) < 3:
+                code += vowels[: 3 - len(code)]
+            if len(code) < 3:
+                code += "X" * (3 - len(code))
+
+        return code[:3]
+
+    def _encode_day(self, day: int, gender: Gender) -> str:
+        """Encode birth day with gender modifier.
+
+        Args:
+            day: Day of birth (1-31)
+            gender: "M" for male, "F" for female
+
+        Returns:
+            2-digit string (females add 40 to day)
+
+        """
+        if gender == "F":
+            day += 40
+        return f"{day:02d}"
+
+    def _calculate_check_digit(self, cf_partial: str) -> str:
+        """Calculate the check digit for a partial CF.
+
+        Args:
+            cf_partial: First 15 characters of CF
+
+        Returns:
+            Single character check digit (A-Z)
+
+        """
+        total = 0
+        for i, char in enumerate(cf_partial):
+            if i % 2 == 0:
+                # Odd positions (1-indexed) = even index (0-indexed)
+                total += CF_ODD_VALUES.get(char, 0)
+            else:
+                # Even positions (1-indexed) = odd index (0-indexed)
+                total += CF_EVEN_VALUES.get(char, 0)
+
+        return chr(ord("A") + (total % 26))
+
+
+# Singleton instance for generator
+class _GeneratorInstances:
+    """Container for generator singleton instances."""
+
+    _cf_generator: CodiceFiscaleGenerator | None = None
+
+    @classmethod
+    def get_cf_generator(cls) -> CodiceFiscaleGenerator:
+        """Get singleton instance of CodiceFiscaleGenerator."""
+        if cls._cf_generator is None:
+            cls._cf_generator = CodiceFiscaleGenerator()
+        return cls._cf_generator
+
+
+def generate_codice_fiscale(
+    surname: str,
+    name: str,
+    birthdate: date,
+    gender: Gender,
+    birth_place_code: str,
+) -> CodiceFiscaleGenerationResult:
+    """Convenience function to generate a Codice Fiscale.
+
+    Args:
+        surname: Person's surname
+        name: Person's first name
+        birthdate: Date of birth
+        gender: "M" for male, "F" for female
+        birth_place_code: 4-character cadastral code (e.g., "H501" for Rome)
+
+    Returns:
+        CodiceFiscaleGenerationResult with the generated CF or error
+
+    Example:
+        >>> from datetime import date
+        >>> result = generate_codice_fiscale(
+        ...     surname="Rossi",
+        ...     name="Mario",
+        ...     birthdate=date(1985, 8, 1),
+        ...     gender="M",
+        ...     birth_place_code="H501"
+        ... )
+        >>> print(result.codice_fiscale)
+        RSSMRA85M01H501Q
+
+    """
+    return _GeneratorInstances.get_cf_generator().generate(
+        surname=surname,
+        name=name,
+        birthdate=birthdate,
+        gender=gender,
+        birth_place_code=birth_place_code,
+    )

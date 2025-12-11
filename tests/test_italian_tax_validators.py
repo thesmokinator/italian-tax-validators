@@ -319,3 +319,430 @@ class PartitaIvaCheckDigitTest(TestCase):
                 expected_valid,
                 f"P.IVA {piva} validation mismatch: expected {expected_valid}",
             )
+
+
+class CodiceFiscaleGenderExtractionTest(TestCase):
+    """Tests for gender extraction from Codice Fiscale."""
+
+    def setUp(self):
+        """Set up test fixtures."""
+        self.validator = CodiceFiscaleValidator()
+
+    def test_gender_male(self):
+        """Test gender extraction for male CF."""
+        result = self.validator.validate("RSSMRA85M01H501Q")
+        self.assertTrue(result.is_valid)
+        self.assertEqual(result.gender, "M")
+
+    def test_gender_female(self):
+        """Test gender extraction for female CF (day + 40)."""
+        result = self.validator.validate("RSSMRA85M41H501U")
+        self.assertTrue(result.is_valid)
+        self.assertEqual(result.gender, "F")
+
+
+class CodiceFiscaleBirthPlaceExtractionTest(TestCase):
+    """Tests for birth place extraction from Codice Fiscale."""
+
+    def setUp(self):
+        """Set up test fixtures."""
+        self.validator = CodiceFiscaleValidator()
+
+    def test_birth_place_rome(self):
+        """Test birth place extraction for Rome (H501)."""
+        result = self.validator.validate("RSSMRA85M01H501Q")
+        self.assertTrue(result.is_valid)
+        self.assertEqual(result.birth_place_code, "H501")
+        self.assertEqual(result.birth_place_name, "ROMA")
+        self.assertEqual(result.birth_place_province, "RM")
+        self.assertFalse(result.is_foreign_born)
+
+    def test_birth_place_foreign(self):
+        """Test birth place extraction for foreign country."""
+        # Z109 = France, CF generated with correct check digit
+        result = self.validator.validate("RSSMRA85M01Z109Q")
+        self.assertTrue(result.is_valid)
+        self.assertEqual(result.birth_place_code, "Z109")
+        self.assertEqual(result.birth_place_name, "FRANCIA")
+        self.assertEqual(result.birth_place_province, "EE")
+        self.assertTrue(result.is_foreign_born)
+
+    def test_birth_place_unknown_code(self):
+        """Test birth place with unknown cadastral code."""
+        # X999 is not in database, CF generated with correct check digit
+        result = self.validator.validate("RSSMRA85M01X999S")
+        self.assertTrue(result.is_valid)
+        self.assertEqual(result.birth_place_code, "X999")
+        self.assertIsNone(result.birth_place_name)
+        self.assertIsNone(result.birth_place_province)
+
+
+class PartitaIvaAdditionalFieldsTest(TestCase):
+    """Tests for additional Partita IVA fields."""
+
+    def setUp(self):
+        """Set up test fixtures."""
+        self.validator = PartitaIvaValidator()
+
+    def test_province_code_extraction(self):
+        """Test province code extraction from P.IVA."""
+        result = self.validator.validate("12345678903")
+        self.assertTrue(result.is_valid)
+        self.assertEqual(result.province_code, "890")
+
+    def test_temporary_vat_number(self):
+        """Test detection of temporary VAT number."""
+        # Temporary P.IVA starts with 99 (valid check digit)
+        result = self.validator.validate("99000000002")
+        self.assertTrue(result.is_valid)
+        self.assertTrue(result.is_temporary)
+
+    def test_regular_vat_number_not_temporary(self):
+        """Test that regular P.IVA is not marked as temporary."""
+        result = self.validator.validate("12345678903")
+        self.assertTrue(result.is_valid)
+        self.assertFalse(result.is_temporary)
+
+
+class CodiceFiscaleGeneratorTest(TestCase):
+    """Tests for Codice Fiscale generation."""
+
+    def setUp(self):
+        """Set up test fixtures."""
+        from italian_tax_validators import CodiceFiscaleGenerator
+
+        self.generator = CodiceFiscaleGenerator()
+
+    def test_generate_male_cf(self):
+        """Test generation of male CF."""
+        from datetime import date
+
+        result = self.generator.generate(
+            surname="Rossi",
+            name="Mario",
+            birthdate=date(1985, 8, 1),
+            gender="M",
+            birth_place_code="H501",
+        )
+        self.assertTrue(result.is_valid)
+        self.assertEqual(result.codice_fiscale, "RSSMRA85M01H501Q")
+
+    def test_generate_female_cf(self):
+        """Test generation of female CF."""
+        from datetime import date
+
+        result = self.generator.generate(
+            surname="Rossi",
+            name="Maria",
+            birthdate=date(1985, 8, 1),
+            gender="F",
+            birth_place_code="H501",
+        )
+        self.assertTrue(result.is_valid)
+        self.assertEqual(result.codice_fiscale, "RSSMRA85M41H501U")
+
+    def test_generate_with_short_name(self):
+        """Test generation with short name (less than 3 consonants)."""
+        from datetime import date
+
+        result = self.generator.generate(
+            surname="Bo",
+            name="Ai",
+            birthdate=date(1990, 1, 15),
+            gender="M",
+            birth_place_code="H501",
+        )
+        self.assertTrue(result.is_valid)
+        # BO -> BOX (padded with X)
+        # AI -> AIX (padded with X)
+        self.assertIsNotNone(result.codice_fiscale)
+        self.assertEqual(len(result.codice_fiscale), 16)
+
+    def test_generate_with_4_consonants_name(self):
+        """Test name encoding with 4+ consonants (1st, 3rd, 4th rule)."""
+        from datetime import date
+
+        result = self.generator.generate(
+            surname="Rossi",
+            name="Roberto",  # R, B, R, T -> uses R, R, T
+            birthdate=date(1985, 8, 1),
+            gender="M",
+            birth_place_code="H501",
+        )
+        self.assertTrue(result.is_valid)
+        # Name ROBERTO has consonants: R, B, R, T (4+)
+        # Rule: take 1st, 3rd, 4th = R, R, T = RRT
+        self.assertIsNotNone(result.codice_fiscale)
+        self.assertTrue(result.codice_fiscale.startswith("RSS"))
+
+    def test_generate_invalid_surname(self):
+        """Test generation with empty surname."""
+        from datetime import date
+
+        result = self.generator.generate(
+            surname="",
+            name="Mario",
+            birthdate=date(1985, 8, 1),
+            gender="M",
+            birth_place_code="H501",
+        )
+        self.assertFalse(result.is_valid)
+        self.assertEqual(result.error_code, "cf_gen_invalid_surname")
+
+    def test_generate_invalid_name(self):
+        """Test generation with empty name."""
+        from datetime import date
+
+        result = self.generator.generate(
+            surname="Rossi",
+            name="",
+            birthdate=date(1985, 8, 1),
+            gender="M",
+            birth_place_code="H501",
+        )
+        self.assertFalse(result.is_valid)
+        self.assertEqual(result.error_code, "cf_gen_invalid_name")
+
+    def test_generate_invalid_gender(self):
+        """Test generation with invalid gender."""
+        from datetime import date
+
+        result = self.generator.generate(
+            surname="Rossi",
+            name="Mario",
+            birthdate=date(1985, 8, 1),
+            gender="X",  # type: ignore[arg-type]
+            birth_place_code="H501",
+        )
+        self.assertFalse(result.is_valid)
+        self.assertEqual(result.error_code, "cf_gen_invalid_gender")
+
+    def test_generate_invalid_birth_place_code(self):
+        """Test generation with invalid birth place code."""
+        from datetime import date
+
+        result = self.generator.generate(
+            surname="Rossi",
+            name="Mario",
+            birthdate=date(1985, 8, 1),
+            gender="M",
+            birth_place_code="H50",  # Too short
+        )
+        self.assertFalse(result.is_valid)
+        self.assertEqual(result.error_code, "cf_gen_invalid_birth_place_code")
+
+    def test_generated_cf_validates(self):
+        """Test that generated CF passes validation."""
+        from datetime import date
+
+        from italian_tax_validators import validate_codice_fiscale
+
+        result = self.generator.generate(
+            surname="Bianchi",
+            name="Giuseppe",
+            birthdate=date(1970, 12, 25),
+            gender="M",
+            birth_place_code="F205",  # Milano
+        )
+        self.assertTrue(result.is_valid)
+
+        # Validate the generated CF
+        validation = validate_codice_fiscale(result.codice_fiscale)
+        self.assertTrue(validation.is_valid)
+        self.assertEqual(validation.birthdate, date(1970, 12, 25))
+        self.assertEqual(validation.gender, "M")
+
+
+class CodiceFiscaleGeneratorConvenienceFunctionTest(TestCase):
+    """Tests for generate_codice_fiscale convenience function."""
+
+    def test_generate_codice_fiscale_function(self):
+        """Test the generate_codice_fiscale convenience function."""
+        from datetime import date
+
+        from italian_tax_validators import generate_codice_fiscale
+
+        result = generate_codice_fiscale(
+            surname="Rossi",
+            name="Mario",
+            birthdate=date(1985, 8, 1),
+            gender="M",
+            birth_place_code="H501",
+        )
+        self.assertTrue(result.is_valid)
+        self.assertEqual(result.codice_fiscale, "RSSMRA85M01H501Q")
+
+
+class MunicipalityDatabaseTest(TestCase):
+    """Tests for municipality database utilities."""
+
+    def test_get_municipality_info(self):
+        """Test getting municipality info from code."""
+        from italian_tax_validators import get_municipality_info
+
+        info = get_municipality_info("H501")
+        self.assertIsNotNone(info)
+        self.assertEqual(info[0], "ROMA")
+        self.assertEqual(info[1], "RM")
+
+    def test_get_municipality_info_not_found(self):
+        """Test getting info for unknown code."""
+        from italian_tax_validators import get_municipality_info
+
+        info = get_municipality_info("X999")
+        self.assertIsNone(info)
+
+    def test_get_cadastral_code(self):
+        """Test getting cadastral code from municipality name."""
+        from italian_tax_validators import get_cadastral_code
+
+        code = get_cadastral_code("ROMA")
+        self.assertEqual(code, "H501")
+
+    def test_get_cadastral_code_case_insensitive(self):
+        """Test that municipality search is case-insensitive."""
+        from italian_tax_validators import get_cadastral_code
+
+        code = get_cadastral_code("roma")
+        self.assertEqual(code, "H501")
+
+    def test_get_cadastral_code_not_found(self):
+        """Test getting code for unknown municipality."""
+        from italian_tax_validators import get_cadastral_code
+
+        code = get_cadastral_code("UNKNOWN_CITY")
+        self.assertIsNone(code)
+
+    def test_search_municipality(self):
+        """Test searching municipalities by partial name."""
+        from italian_tax_validators import search_municipality
+
+        results = search_municipality("MILAN")
+        self.assertTrue(len(results) >= 1)
+        # Should find Milano
+        names = [r[1] for r in results]
+        self.assertIn("MILANO", names)
+
+    def test_search_municipality_no_results(self):
+        """Test search with no results."""
+        from italian_tax_validators import search_municipality
+
+        results = search_municipality("XYZNOTEXIST")
+        self.assertEqual(len(results), 0)
+
+    def test_is_foreign_country(self):
+        """Test detection of foreign country codes."""
+        from italian_tax_validators import is_foreign_country
+
+        self.assertTrue(is_foreign_country("Z109"))  # France
+        self.assertFalse(is_foreign_country("H501"))  # Roma
+
+
+class CLITest(TestCase):
+    """Tests for the command-line interface."""
+
+    def test_validate_cf_valid(self):
+        """Test CLI validate-cf with valid CF."""
+        from italian_tax_validators.cli import main
+
+        exit_code = main(["validate-cf", "RSSMRA85M01H501Q"])
+        self.assertEqual(exit_code, 0)
+
+    def test_validate_cf_invalid(self):
+        """Test CLI validate-cf with invalid CF."""
+        from italian_tax_validators.cli import main
+
+        exit_code = main(["validate-cf", "INVALID"])
+        self.assertEqual(exit_code, 1)
+
+    def test_validate_piva_valid(self):
+        """Test CLI validate-piva with valid P.IVA."""
+        from italian_tax_validators.cli import main
+
+        exit_code = main(["validate-piva", "12345678903"])
+        self.assertEqual(exit_code, 0)
+
+    def test_validate_piva_invalid(self):
+        """Test CLI validate-piva with invalid P.IVA."""
+        from italian_tax_validators.cli import main
+
+        exit_code = main(["validate-piva", "12345678901"])
+        self.assertEqual(exit_code, 1)
+
+    def test_generate_cf(self):
+        """Test CLI generate-cf command."""
+        from italian_tax_validators.cli import main
+
+        exit_code = main([
+            "generate-cf",
+            "--surname",
+            "Rossi",
+            "--name",
+            "Mario",
+            "--birthdate",
+            "1985-08-01",
+            "--gender",
+            "M",
+            "--birth-place-code",
+            "H501",
+        ])
+        self.assertEqual(exit_code, 0)
+
+    def test_generate_cf_with_municipality_name(self):
+        """Test CLI generate-cf with municipality name."""
+        from italian_tax_validators.cli import main
+
+        exit_code = main([
+            "generate-cf",
+            "--surname",
+            "Rossi",
+            "--name",
+            "Mario",
+            "--birthdate",
+            "1985-08-01",
+            "--gender",
+            "M",
+            "--birth-place",
+            "ROMA",
+        ])
+        self.assertEqual(exit_code, 0)
+
+    def test_generate_cf_invalid_date(self):
+        """Test CLI generate-cf with invalid date format."""
+        from italian_tax_validators.cli import main
+
+        exit_code = main([
+            "generate-cf",
+            "--surname",
+            "Rossi",
+            "--name",
+            "Mario",
+            "--birthdate",
+            "01-08-1985",  # Wrong format
+            "--gender",
+            "M",
+            "--birth-place-code",
+            "H501",
+        ])
+        self.assertEqual(exit_code, 1)
+
+    def test_search_municipality(self):
+        """Test CLI search-municipality command."""
+        from italian_tax_validators.cli import main
+
+        exit_code = main(["search-municipality", "ROMA"])
+        self.assertEqual(exit_code, 0)
+
+    def test_search_municipality_not_found(self):
+        """Test CLI search-municipality with no results."""
+        from italian_tax_validators.cli import main
+
+        exit_code = main(["search-municipality", "XYZNOTEXIST123"])
+        self.assertEqual(exit_code, 1)
+
+    def test_cli_no_command(self):
+        """Test CLI with no command shows help."""
+        from italian_tax_validators.cli import main
+
+        exit_code = main([])
+        self.assertEqual(exit_code, 0)
